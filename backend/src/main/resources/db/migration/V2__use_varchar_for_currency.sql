@@ -1,0 +1,2 @@
+ALTER TABLE expenses
+    ALTER COLUMN currency TYPE VARCHAR(3);
