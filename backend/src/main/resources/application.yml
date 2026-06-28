@@ -32,3 +32,6 @@ server:
 app:
   coroutines:
     database-parallelism: ${DATABASE_POOL_SIZE:10}
+  auth:
+    jwt-secret: ${JWT_SECRET:change-this-secret-before-production-use-at-least-32-bytes}
+    token-ttl: ${JWT_TOKEN_TTL:30d}

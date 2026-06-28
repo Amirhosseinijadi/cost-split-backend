@@ -12,6 +12,7 @@ import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 @Entity
@@ -25,6 +26,9 @@ class UserEntity(
 
     @Column(nullable = false, unique = true, length = 320)
     var email: String,
+
+    @Column(name = "password_hash", length = 100)
+    var passwordHash: String? = null,
 
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = Instant.now(),
@@ -42,6 +46,12 @@ class ExpenseGroupEntity(
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "owner_user_id", nullable = false)
     val owner: UserEntity,
+
+    @Column(length = 40)
+    var icon: String? = null,
+
+    @Column(length = 7)
+    var color: String? = null,
 
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = Instant.now(),
@@ -91,6 +101,15 @@ class ExpenseEntity(
     @Column(nullable = false, length = 3)
     val currency: String,
 
+    @Column(nullable = false, length = 40)
+    val category: String = "general",
+
+    @Column(length = 500)
+    val note: String? = null,
+
+    @Column(name = "occurred_on", nullable = false)
+    val occurredOn: LocalDate = LocalDate.now(),
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "paid_by_user_id", nullable = false)
     val paidBy: UserEntity,
@@ -122,4 +141,38 @@ class ExpenseShareEntity(
 
     @Column(name = "amount_owed", nullable = false, precision = 19, scale = 2)
     val amountOwed: BigDecimal,
+)
+
+@Entity
+@Table(name = "settlements")
+class SettlementEntity(
+    @Id
+    val id: UUID = UUID.randomUUID(),
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "group_id", nullable = false)
+    val group: ExpenseGroupEntity,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "from_user_id", nullable = false)
+    val fromUser: UserEntity,
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "to_user_id", nullable = false)
+    val toUser: UserEntity,
+
+    @Column(nullable = false, precision = 19, scale = 2)
+    val amount: BigDecimal,
+
+    @Column(nullable = false, length = 3)
+    val currency: String,
+
+    @Column(length = 500)
+    val note: String? = null,
+
+    @Column(name = "settled_on", nullable = false)
+    val settledOn: LocalDate = LocalDate.now(),
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    val createdAt: Instant = Instant.now(),
 )

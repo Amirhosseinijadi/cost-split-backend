@@ -12,6 +12,7 @@ import com.costsplit.api.domain.GroupMemberRepository
 import com.costsplit.api.domain.UserRepository
 import org.springframework.stereotype.Service
 import java.math.RoundingMode
+import java.time.LocalDate
 import java.util.UUID
 
 @Service
@@ -47,6 +48,9 @@ class ExpenseService(
                 description = request.description.trim(),
                 totalAmount = normalizedTotal,
                 currency = request.currency.uppercase(),
+                category = request.category.trim().lowercase().ifEmpty { "general" },
+                note = request.note?.trim()?.takeIf { it.isNotEmpty() },
+                occurredOn = request.occurredOn ?: LocalDate.now(),
                 paidBy = usersById.getValue(request.paidByUserId),
             ),
         )
@@ -84,6 +88,9 @@ private fun ExpenseEntity.toResponse(shares: List<ExpenseShareEntity>) = Expense
     paidByUserId = paidBy.id,
     paidByDisplayName = paidBy.displayName,
     splitType = splitType.name,
+    category = category,
+    note = note,
+    occurredOn = occurredOn,
     shares = shares.sortedBy { it.user.displayName }.map {
         ExpenseShareResponse(
             userId = it.user.id,

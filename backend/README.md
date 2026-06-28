@@ -7,15 +7,17 @@ A backend MVP for a Splitwise-style cost-sharing application.
 - Create and list users
 - Create an expense group and add members
 - Record who paid for an expense
+- Attach group display metadata and expense category/date/notes for app screens
 - Divide an expense equally between selected participants
 - Preserve the exact total when cents cannot divide evenly
 - Calculate each member's net balance per currency
 - Suggest repayments from debtors to creditors
+- Record settlement payments and apply them to balances
 - Serve requests with Kotlin suspending controllers and structured concurrency
 - Validate the PostgreSQL schema with Flyway and Hibernate
 - Return consistent RFC 9457 problem responses for API errors
 
-Authentication, invitations, custom percentage splits, payment history, and notifications are intentionally outside this first version.
+Invitations, custom percentage splits, and notifications are intentionally outside this first version.
 
 ## Stack
 
@@ -36,9 +38,12 @@ erDiagram
     APP_USERS ||--o{ EXPENSE_GROUPS : owns
     EXPENSE_GROUPS ||--o{ GROUP_MEMBERS : contains
     EXPENSE_GROUPS ||--o{ EXPENSES : contains
+    EXPENSE_GROUPS ||--o{ SETTLEMENTS : contains
     APP_USERS ||--o{ EXPENSES : pays
     EXPENSES ||--|{ EXPENSE_SHARES : divides_into
     APP_USERS ||--o{ EXPENSE_SHARES : owes
+    APP_USERS ||--o{ SETTLEMENTS : pays
+    APP_USERS ||--o{ SETTLEMENTS : receives
 
     APP_USERS {
         uuid id PK
@@ -50,6 +55,8 @@ erDiagram
         uuid id PK
         varchar name
         uuid owner_user_id FK
+        varchar icon
+        varchar color
         timestamptz created_at
     }
     GROUP_MEMBERS {
@@ -64,6 +71,9 @@ erDiagram
         varchar description
         numeric total_amount
         char currency
+        varchar category
+        varchar note
+        date occurred_on
         uuid paid_by_user_id FK
         varchar split_type
         timestamptz created_at
@@ -73,6 +83,17 @@ erDiagram
         uuid expense_id FK
         uuid user_id FK
         numeric amount_owed
+    }
+    SETTLEMENTS {
+        uuid id PK
+        uuid group_id FK
+        uuid from_user_id FK
+        uuid to_user_id FK
+        numeric amount
+        char currency
+        varchar note
+        date settled_on
+        timestamptz created_at
     }
 ```
 
@@ -93,6 +114,8 @@ Run the API:
 ```
 
 The API runs at `http://localhost:8080`. The health endpoint is `GET /actuator/health`.
+
+Import `postman/Cost Split API.postman_collection.json` into Postman to exercise the local API. The collection uses `http://localhost:8080` as `baseUrl` and saves response values such as `accessToken`, `ownerUserId`, `secondUserId`, `groupId`, and `expenseId` as collection variables while you run the requests.
 
 These environment variables can override the local database settings:
 
@@ -115,40 +138,75 @@ JPA remains a blocking persistence technology. A fully non-blocking database sta
 
 | Method | Path | Purpose |
 |---|---|---|
+| `POST` | `/api/v1/auth/register` | Register with email and password |
+| `POST` | `/api/v1/auth/login` | Login and receive a 30-day bearer token |
+| `GET` | `/api/v1/auth/validate` | Validate the current bearer token |
 | `POST` | `/api/v1/users` | Create a user |
 | `GET` | `/api/v1/users` | List users |
 | `GET` | `/api/v1/users/{userId}` | Get a user |
+| `GET` | `/api/v1/users/{userId}/groups` | List groups visible to a user |
 | `POST` | `/api/v1/groups` | Create a group |
 | `GET` | `/api/v1/groups/{groupId}` | Get a group and its members |
 | `POST` | `/api/v1/groups/{groupId}/members` | Add an existing user |
 | `POST` | `/api/v1/groups/{groupId}/expenses` | Create an equal-split expense |
 | `GET` | `/api/v1/groups/{groupId}/expenses` | List group expenses |
+| `POST` | `/api/v1/groups/{groupId}/settlements` | Record a settlement payment |
+| `GET` | `/api/v1/groups/{groupId}/settlements` | List settlement payments |
 | `GET` | `/api/v1/expenses/{expenseId}` | Get an expense and its shares |
 | `GET` | `/api/v1/groups/{groupId}/balances` | Get balances and suggested repayments |
 
 ### Example Flow
 
-Create two users:
+Register a user:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"displayName":"Sara","email":"sara@example.com","password":"password123"}'
+```
+
+Login returns a bearer token that expires after 30 days:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"sara@example.com","password":"password123"}'
+```
+
+Use that token for protected endpoints:
+
+```bash
+curl http://localhost:8080/api/v1/auth/validate \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Create another user:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/users \
-  -H 'Content-Type: application/json' \
-  -d '{"displayName":"Sara","email":"sara@example.com"}'
-
-curl -X POST http://localhost:8080/api/v1/users \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"displayName":"Reza","email":"reza@example.com"}'
+```
+
+All `/api/v1/**` endpoints except registration and login require:
+
+```text
+Authorization: Bearer YOUR_TOKEN
 ```
 
 Use the returned user IDs to create a group:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/groups \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "name":"Weekend trip",
     "ownerUserId":"OWNER_USER_ID",
-    "memberUserIds":["SECOND_USER_ID"]
+    "memberUserIds":["SECOND_USER_ID"],
+    "icon":"plane",
+    "color":"#4F46E5"
   }'
 ```
 
@@ -156,13 +214,33 @@ Add an expense paid by one user and shared by both:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/groups/GROUP_ID/expenses \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "description":"Dinner",
     "totalAmount":42.50,
     "currency":"USD",
     "paidByUserId":"OWNER_USER_ID",
-    "participantUserIds":["OWNER_USER_ID","SECOND_USER_ID"]
+    "participantUserIds":["OWNER_USER_ID","SECOND_USER_ID"],
+    "category":"food",
+    "note":"Shared main course",
+    "occurredOn":"2026-06-27"
+  }'
+```
+
+Record a settlement payment:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/groups/GROUP_ID/settlements \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "fromUserId":"SECOND_USER_ID",
+    "toUserId":"OWNER_USER_ID",
+    "amount":21.25,
+    "currency":"USD",
+    "note":"Paid by card",
+    "settledOn":"2026-06-27"
   }'
 ```
 

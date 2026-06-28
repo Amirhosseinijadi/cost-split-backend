@@ -31,6 +31,8 @@ class GroupService(
             ExpenseGroupEntity(
                 name = request.name.trim(),
                 owner = usersById.getValue(request.ownerUserId),
+                icon = request.icon?.trim()?.takeIf { it.isNotEmpty() },
+                color = request.color?.uppercase(),
             ),
         )
         val members = groupMemberRepository.saveAll(
@@ -55,6 +57,15 @@ class GroupService(
         group.toResponse(groupMemberRepository.findMembersWithUsers(groupId))
     }
 
+    suspend fun listForUser(userId: UUID): List<GroupResponse> = database.read {
+        if (!userRepository.existsById(userId)) {
+            throw NotFoundException("User $userId was not found")
+        }
+        groupRepository.findAllForUser(userId).map { group ->
+            group.toResponse(groupMemberRepository.findMembersWithUsers(group.id))
+        }
+    }
+
     private fun findEntity(groupId: UUID): ExpenseGroupEntity = groupRepository.findById(groupId)
         .orElseThrow { NotFoundException("Group $groupId was not found") }
 }
@@ -63,6 +74,8 @@ private fun ExpenseGroupEntity.toResponse(members: List<GroupMemberEntity>) = Gr
     id = id,
     name = name,
     ownerUserId = owner.id,
+    icon = icon,
+    color = color,
     members = members.map {
         GroupMemberResponse(
             userId = it.user.id,

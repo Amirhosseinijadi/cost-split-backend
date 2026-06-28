@@ -8,6 +8,7 @@ import com.costsplit.api.domain.ExpenseGroupRepository
 import com.costsplit.api.domain.ExpenseRepository
 import com.costsplit.api.domain.ExpenseShareRepository
 import com.costsplit.api.domain.GroupMemberRepository
+import com.costsplit.api.domain.SettlementRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import org.springframework.stereotype.Service
@@ -20,6 +21,7 @@ class BalanceService(
     private val groupMemberRepository: GroupMemberRepository,
     private val expenseRepository: ExpenseRepository,
     private val expenseShareRepository: ExpenseShareRepository,
+    private val settlementRepository: SettlementRepository,
     private val database: CoroutineDatabaseExecutor,
 ) {
     suspend fun getGroupBalances(groupId: UUID): GroupBalancesResponse = coroutineScope {
@@ -35,6 +37,9 @@ class BalanceService(
         val sharesDeferred = async {
             database.read { expenseShareRepository.findAllForGroup(groupId) }
         }
+        val settlementsDeferred = async {
+            database.read { settlementRepository.findAllForGroup(groupId) }
+        }
 
         if (!groupExists.await()) {
             throw NotFoundException("Group $groupId was not found")
@@ -43,8 +48,9 @@ class BalanceService(
         val members = membersDeferred.await()
         val expenses = expensesDeferred.await()
         val shares = sharesDeferred.await()
+        val settlements = settlementsDeferred.await()
         val displayNames = members.associate { it.user.id to it.user.displayName }
-        val currencies = expenses.map { it.currency }.distinct().sorted()
+        val currencies = (expenses.map { it.currency } + settlements.map { it.currency }).distinct().sorted()
 
         val currencyBalances = currencies.map { currency ->
             val netByUserId = members.associate { it.user.id to ZERO }.toMutableMap()
@@ -53,6 +59,10 @@ class BalanceService(
             }
             shares.filter { it.expense.currency == currency }.forEach { share ->
                 netByUserId.compute(share.user.id) { _, current -> current!!.subtract(share.amountOwed) }
+            }
+            settlements.filter { it.currency == currency }.forEach { settlement ->
+                netByUserId.compute(settlement.fromUser.id) { _, current -> current!!.add(settlement.amount) }
+                netByUserId.compute(settlement.toUser.id) { _, current -> current!!.subtract(settlement.amount) }
             }
 
             CurrencyBalanceResponse(

@@ -3,6 +3,7 @@ package com.costsplit.api.api
 import com.costsplit.api.service.ConflictException
 import com.costsplit.api.service.InvalidRequestException
 import com.costsplit.api.service.NotFoundException
+import com.costsplit.api.service.UnauthorizedException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.MethodArgumentNotValidException
@@ -22,6 +23,10 @@ class ApiExceptionHandler {
     @ExceptionHandler(InvalidRequestException::class)
     fun handleInvalidRequest(exception: InvalidRequestException): ProblemDetail =
         problem(HttpStatus.BAD_REQUEST, "Invalid request", exception.message)
+
+    @ExceptionHandler(UnauthorizedException::class)
+    fun handleUnauthorized(exception: UnauthorizedException): ProblemDetail =
+        problem(HttpStatus.UNAUTHORIZED, "Unauthorized", exception.message)
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(exception: MethodArgumentNotValidException): ProblemDetail {

@@ -3,6 +3,7 @@ package com.costsplit.api.api
 import com.costsplit.api.service.BalanceService
 import com.costsplit.api.service.ExpenseService
 import com.costsplit.api.service.GroupService
+import com.costsplit.api.service.SettlementService
 import com.costsplit.api.service.UserService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -19,6 +20,7 @@ import java.util.UUID
 @RequestMapping("/api/v1/users")
 class UserController(
     private val userService: UserService,
+    private val groupService: GroupService,
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -29,6 +31,9 @@ class UserController(
 
     @GetMapping("/{userId}")
     suspend fun get(@PathVariable userId: UUID): UserResponse = userService.get(userId)
+
+    @GetMapping("/{userId}/groups")
+    suspend fun listGroups(@PathVariable userId: UUID): List<GroupResponse> = groupService.listForUser(userId)
 }
 
 @RestController
@@ -37,6 +42,7 @@ class GroupController(
     private val groupService: GroupService,
     private val expenseService: ExpenseService,
     private val balanceService: BalanceService,
+    private val settlementService: SettlementService,
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -63,6 +69,17 @@ class GroupController(
 
     @GetMapping("/{groupId}/balances")
     suspend fun getBalances(@PathVariable groupId: UUID): GroupBalancesResponse = balanceService.getGroupBalances(groupId)
+
+    @PostMapping("/{groupId}/settlements")
+    @ResponseStatus(HttpStatus.CREATED)
+    suspend fun createSettlement(
+        @PathVariable groupId: UUID,
+        @Valid @RequestBody request: CreateSettlementRequest,
+    ): SettlementResponse = settlementService.create(groupId, request)
+
+    @GetMapping("/{groupId}/settlements")
+    suspend fun listSettlements(@PathVariable groupId: UUID): List<SettlementResponse> =
+        settlementService.listForGroup(groupId)
 }
 
 @RestController
